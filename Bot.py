@@ -1,13 +1,36 @@
 import streamlit as st
 import random
+import pandas as pd
 
 # --- CLASS POKER BOT ---
 class PokerBot:
-    def __init__(self, stack, position, bounty):
-        self.stack = stack
+    def __init__(self, stack_bb, position, bounty, avg_stack, players_left, total_players, buy_in, paid_places):
+        self.stack_bb = stack_bb
         self.position = position
         self.bounty = bounty
-        self.opponent_profiles = {}
+        self.avg_stack = avg_stack
+        self.players_left = players_left
+        self.total_players = total_players
+        self.buy_in = buy_in
+        self.paid_places = paid_places
+        self.opponents = []
+        self.tournament_stage = self.get_tournament_stage()
+
+    def get_tournament_stage(self):
+        """ Détermine le stade du tournoi """
+        if self.players_left > self.total_players * 0.5:
+            return "Early Game"
+        elif self.players_left > self.paid_places + 20:
+            return "Mid Game"
+        elif self.players_left > self.paid_places:
+            return "Approche de la bulle"
+        elif self.players_left > 9:
+            return "In The Money"
+        else:
+            return "Table Finale"
+
+    def set_opponents(self, opponents):
+        self.opponents = opponents
 
     def evaluate_hand(self, hand):
         """ Évalue la force de la main préflop """
@@ -26,53 +49,98 @@ class PokerBot:
         else:
             return "faible"
 
-    def estimate_win_probability(self, hand, community_cards):
-        """ Simulation basique pour estimer les chances de victoire """
-        strong_cards = ['A', 'K', 'Q', 'J', '10']
-        score = sum(1 for card in hand if card in strong_cards)
-        if community_cards:
-            score += sum(1 for card in community_cards if card in strong_cards)
-        return min(0.95, max(0.1, score / 10))
+    def decision(self, hand):
+        """ Prend une décision selon le stade du tournoi et la situation """
+        hand_strength = self.evaluate_hand(hand)
+        risk_factor = self.stack_bb / self.avg_stack
+        high_bounty_targets = [op for op in self.opponents if op["bounty"] > self.bounty]
 
-    def make_decision(self, hand, community_cards, actions, pot, opponents):
-        """ Prend une décision en combinant plusieurs analyses """
-        strength = self.evaluate_hand(hand)
-        win_prob = self.estimate_win_probability(hand, community_cards)
+        if self.tournament_stage == "Early Game":
+            if hand_strength == "premium":
+                return "Raise"
+            elif hand_strength == "forte":
+                return "Call"
+            elif hand_strength in ["moyenne", "spéculative"]:
+                return "Limp" if self.stack_bb > 30 else "Fold"
+            else:
+                return "Fold"
 
-        if strength == "premium":
-            return "Raise" if "raise" not in actions else "Re-Raise"
-        elif strength == "forte":
-            return "Call" if "raise" in actions else "Raise"
-        elif strength == "spéculative":
-            return "Call" if pot < self.stack * 0.3 else "Fold"
-        elif strength == "moyenne":
-            return "Call" if win_prob > 0.5 else "Fold"
-        else:
-            return "Fold"
+        elif self.tournament_stage == "Mid Game":
+            if hand_strength in ["premium", "forte"]:
+                return "Raise"
+            elif hand_strength == "moyenne":
+                return "Call" if self.stack_bb > 20 else "Fold"
+            elif hand_strength == "spéculative" and self.stack_bb > 30:
+                return "Call"
+            else:
+                return "Fold"
 
-# --- STREAMLIT INTERFACE ---
-st.title("🤖 Poker Bot 6-Max KO")
+        elif self.tournament_stage == "Approche de la bulle":
+            if risk_factor < 0.5 and hand_strength in ["premium", "forte"]:
+                return "Raise"
+            elif risk_factor > 1 and hand_strength == "moyenne":
+                return "All-in"
+            elif high_bounty_targets and self.stack_bb > 15:
+                return "Call"
+            else:
+                return "Fold"
 
-# Saisie des informations de la main
-stack = st.slider("💰 Stack du bot", min_value=50, max_value=500, value=100, step=10)
-position = st.selectbox("🃏 Position du bot", ["UTG", "MP", "CO", "BTN", "SB", "BB"])
-bounty = st.number_input("🏆 Prime Knockout (KO) du bot", min_value=0, value=5)
+        elif self.tournament_stage == "In The Money":
+            if hand_strength == "premium":
+                return "All-in"
+            elif hand_strength == "forte" and self.stack_bb > 10:
+                return "Raise"
+            elif high_bounty_targets and self.stack_bb > 20:
+                return "Call"
+            else:
+                return "Fold"
 
-# Choix des cartes du bot
-card1 = st.selectbox("🂠 Première carte", ['A', 'K', 'Q', 'J', '10', '9', '8', '7', '6', '5', '4', '3', '2'])
-card2 = st.selectbox("🂡 Deuxième carte", ['A', 'K', 'Q', 'J', '10', '9', '8', '7', '6', '5', '4', '3', '2'])
+        elif self.tournament_stage == "Table Finale":
+            if self.stack_bb < 10:
+                return "All-in" if hand_strength in ["premium", "forte"] else "Fold"
+            elif hand_strength == "premium":
+                return "Raise"
+            elif hand_strength == "forte" and high_bounty_targets:
+                return "Call"
+            else:
+                return "Fold"
+
+        return "Fold"
+
+# --- INTERFACE STREAMLIT ---
+st.title("♠️ Poker Bot Tournoi MTT KO 🏆")
+
+# Sélection des paramètres du tournoi
+buy_in = st.number_input("💵 Prix d'entrée du tournoi ($)", min_value=1, value=10)
+total_players = st.slider("👥 Nombre total de joueurs", min_value=50, max_value=10000, value=1000, step=50)
+paid_places = st.slider("💰 Nombre de places payées", min_value=10, max_value=500, value=150, step=10)
+
+# Sélection des paramètres du joueur
+stack_bb = st.slider("💰 Ton stack (BB)", min_value=1, max_value=200, value=50, step=1)
+position = st.selectbox("🎭 Ta position", ["UTG", "MP", "CO", "BTN", "SB", "BB"])
+bounty = st.number_input("🏆 Ta prime Knockout (KO)", min_value=0, value=5)
+avg_stack = st.slider("📊 Stack moyen du tournoi (BB)", min_value=5, max_value=200, value=40, step=1)
+players_left = st.slider("👥 Joueurs restants", min_value=10, max_value=total_players, value=300, step=10)
+
+# Entrée des adversaires
+st.subheader("👥 Adversaires")
+opponents = []
+for i in range(5):
+    stack = st.slider(f"💰 Stack Joueur {i+1} (BB)", min_value=1, max_value=200, value=random.randint(10, 100), step=1)
+    bounty = st.number_input(f"🏆 Bounty Joueur {i+1}", min_value=0, value=random.randint(1, 10))
+    opponents.append({"stack": stack, "bounty": bounty})
+
+# Choix des cartes
+st.subheader("🃏 Tes cartes")
+card1 = st.selectbox("Première carte", ['A', 'K', 'Q', 'J', '10', '9', '8', '7', '6', '5', '4', '3', '2'])
+card2 = st.selectbox("Deuxième carte", ['A', 'K', 'Q', 'J', '10', '9', '8', '7', '6', '5', '4', '3', '2'])
 hand = (card1, card2)
 
-# Saisie des cartes du flop
-community_cards = st.text_input("🃏 Cartes du Flop (ex: A,K,10)", "")
-
-# Actions des adversaires
-actions = st.multiselect("🎭 Actions des adversaires", ["raise", "call", "check", "fold"])
-pot = st.slider("💵 Taille du pot", min_value=10, max_value=500, value=50, step=10)
-
 # Création du bot et prise de décision
-bot = PokerBot(stack=stack, position=position, bounty=bounty)
-decision = bot.make_decision(hand, community_cards.split(","), actions, pot, [])
+bot = PokerBot(stack_bb, position, bounty, avg_stack, players_left, total_players, buy_in, paid_places)
+bot.set_opponents(opponents)
+decision = bot.decision(hand)
 
-# Affichage de la décision du bot
+# Affichage du tournoi
+st.subheader(f"📊 Stade du tournoi : **{bot.tournament_stage}**")
 st.subheader(f"🤖 Décision du bot : **{decision}**")
