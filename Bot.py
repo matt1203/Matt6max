@@ -56,55 +56,15 @@ class PokerBot:
         high_bounty_targets = [op for op in self.opponents if op["bounty"] > self.bounty]
 
         if self.tournament_stage == "Early Game":
-            if hand_strength == "premium":
-                return "Raise"
-            elif hand_strength == "forte":
-                return "Call"
-            elif hand_strength in ["moyenne", "spéculative"]:
-                return "Limp" if self.stack_bb > 30 else "Fold"
-            else:
-                return "Fold"
-
+            return "Raise" if hand_strength == "premium" else "Call" if hand_strength == "forte" else "Fold"
         elif self.tournament_stage == "Mid Game":
-            if hand_strength in ["premium", "forte"]:
-                return "Raise"
-            elif hand_strength == "moyenne":
-                return "Call" if self.stack_bb > 20 else "Fold"
-            elif hand_strength == "spéculative" and self.stack_bb > 30:
-                return "Call"
-            else:
-                return "Fold"
-
+            return "Raise" if hand_strength in ["premium", "forte"] else "Call" if hand_strength == "moyenne" else "Fold"
         elif self.tournament_stage == "Approche de la bulle":
-            if risk_factor < 0.5 and hand_strength in ["premium", "forte"]:
-                return "Raise"
-            elif risk_factor > 1 and hand_strength == "moyenne":
-                return "All-in"
-            elif high_bounty_targets and self.stack_bb > 15:
-                return "Call"
-            else:
-                return "Fold"
-
+            return "All-in" if risk_factor > 1 and hand_strength == "moyenne" else "Fold"
         elif self.tournament_stage == "In The Money":
-            if hand_strength == "premium":
-                return "All-in"
-            elif hand_strength == "forte" and self.stack_bb > 10:
-                return "Raise"
-            elif high_bounty_targets and self.stack_bb > 20:
-                return "Call"
-            else:
-                return "Fold"
-
+            return "All-in" if hand_strength == "premium" else "Raise" if hand_strength == "forte" else "Fold"
         elif self.tournament_stage == "Table Finale":
-            if self.stack_bb < 10:
-                return "All-in" if hand_strength in ["premium", "forte"] else "Fold"
-            elif hand_strength == "premium":
-                return "Raise"
-            elif hand_strength == "forte" and high_bounty_targets:
-                return "Call"
-            else:
-                return "Fold"
-
+            return "All-in" if self.stack_bb < 10 and hand_strength in ["premium", "forte"] else "Raise" if hand_strength == "premium" else "Fold"
         return "Fold"
 
 # --- INTERFACE STREAMLIT ---
@@ -141,6 +101,21 @@ bot = PokerBot(stack_bb, position, bounty, avg_stack, players_left, total_player
 bot.set_opponents(opponents)
 decision = bot.decision(hand)
 
-# Affichage du tournoi
-st.subheader(f"📊 Stade du tournoi : **{bot.tournament_stage}**")
+# --- AFFICHAGE GRAPHIQUE TABLE ---
+st.subheader("🃏 Table de Poker")
+table_html = """
+<div style='display: flex; justify-content: center;'>
+    <svg width="500" height="500">
+        <circle cx="250" cy="250" r="200" fill="green" />
+        <text x="250" y="30" text-anchor="middle" fill="white">Joueur 1</text>
+        <text x="50" y="250" text-anchor="middle" fill="white">Joueur 2</text>
+        <text x="450" y="250" text-anchor="middle" fill="white">Joueur 3</text>
+        <text x="250" y="470" text-anchor="middle" fill="white">Joueur 4</text>
+        <text x="100" y="400" text-anchor="middle" fill="white">Joueur 5</text>
+        <text x="400" y="400" text-anchor="middle" fill="white">Toi</text>
+    </svg>
+</div>
+"""
+st.markdown(table_html, unsafe_allow_html=True)
+
 st.subheader(f"🤖 Décision du bot : **{decision}**")
